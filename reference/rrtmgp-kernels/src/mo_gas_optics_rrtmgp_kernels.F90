@@ -609,7 +609,7 @@ contains
     integer  :: ilay, icol, igpt, ibnd, itropo, iflav
     integer  :: gptS, gptE
     real(wp), dimension(2), parameter :: one = [1._wp, 1._wp]
-    REAL(wp) :: pfrac          (ngpt, ncol,nlay)
+    real(wp) :: pfrac          (ngpt, ncol,nlay)
     real(wp) :: planck_function(ncol,nlay+1,nbnd)
     ! -----------------
 
