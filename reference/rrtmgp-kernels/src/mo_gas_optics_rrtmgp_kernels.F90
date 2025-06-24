@@ -370,7 +370,7 @@ contains
     ! local variables
     real(wp) :: tau_major(ngpt) ! major species optical depth
     ! local index
-    integer :: icol, igpt, ilay, iflav, ibnd, itropo
+    integer :: icol, ilay, iflav, ibnd, itropo
     integer :: gptS, gptE
 
     ! optical depth calculation for major species
@@ -388,9 +388,7 @@ contains
                                  fmajor(:,:,:,icol,ilay,iflav), kmajor,                          &
                                  band_lims_gpt(1, ibnd), band_lims_gpt(2, ibnd),                 &
                                  jeta(:,icol,ilay,iflav), jtemp(icol,ilay),jpress(icol,ilay)+itropo, tau_major)
-          do igpt = gptS, gptE
-            tau(icol,ilay,igpt) = tau(icol,ilay,igpt) + tau_major(igpt)
-          end do
+          tau(icol,ilay,gptS:gptE) = tau(icol,ilay,gptS:gptE) + tau_major(gptS:gptE)
         end do
       end do
     end do
@@ -609,8 +607,9 @@ contains
     integer  :: ilay, icol, igpt, ibnd, itropo, iflav
     integer  :: gptS, gptE
     real(wp), dimension(2), parameter :: one = [1._wp, 1._wp]
-    real(wp) :: pfrac          (ngpt, ncol,nlay)
+    real(wp) :: pfrac          (ncol,nlay  ,ngpt)
     real(wp) :: planck_function(ncol,nlay+1,nbnd)
+    real(wp) :: totplnk_delta_r
     ! -----------------
 
     ! Calculation of fraction of band's Planck irradiance associated with each g-point
@@ -627,18 +626,19 @@ contains
                           one, fmajor(:,:,:,icol,ilay,iflav), pfracin, &
                           band_lims_gpt(1, ibnd), band_lims_gpt(2, ibnd),                 &
                           jeta(:,icol,ilay,iflav), jtemp(icol,ilay),jpress(icol,ilay)+itropo, &
-                          pfrac(:, icol,ilay))
+                          pfrac(icol,ilay,:))
         end do ! column
       end do   ! layer
     end do     ! band
 
+    totplnk_delta_r = 1.0_wp / totplnk_delta
     !
     ! Planck function by band for the surface
     ! Compute surface source irradiance for g-point, equals band irradiance x fraction for g-point
     !
     do icol = 1, ncol
-      planck_function(icol,1,1:nbnd) = interpolate1D(tsfc(icol), temp_ref_min, totplnk_delta, totplnk)
-      planck_function(icol,2,1:nbnd) = interpolate1D(tsfc(icol) + delta_Tsurf, temp_ref_min, totplnk_delta, totplnk)
+      planck_function(icol,1,1:nbnd) = interpolate1D(tsfc(icol), temp_ref_min, totplnk_delta_r, totplnk)
+      planck_function(icol,2,1:nbnd) = interpolate1D(tsfc(icol) + delta_Tsurf, temp_ref_min, totplnk_delta_r, totplnk)
       !
       ! Map to g-points
       !
@@ -646,8 +646,8 @@ contains
         gptS = band_lims_gpt(1, ibnd)
         gptE = band_lims_gpt(2, ibnd)
         do igpt = gptS, gptE
-            sfc_src(icol,igpt) = pfrac(igpt,icol,sfc_lay) * planck_function(icol,1,ibnd)
-            sfc_source_Jac(icol, igpt) = pfrac(igpt,icol,sfc_lay) * &
+            sfc_src(icol,igpt) = pfrac(icol,sfc_lay,igpt) * planck_function(icol,1,ibnd)
+            sfc_source_Jac(icol, igpt) = pfrac(icol,sfc_lay,igpt) * &
                                 (planck_function(icol, 2, ibnd) - planck_function(icol,1,ibnd))
         end do
       end do
@@ -656,7 +656,7 @@ contains
     do ilay = 1, nlay
       do icol = 1, ncol
         ! Compute layer source irradiance for g-point, equals band irradiance x fraction for g-point
-        planck_function(icol,ilay,1:nbnd) = interpolate1D(tlay(icol,ilay), temp_ref_min, totplnk_delta, totplnk)
+        planck_function(icol,ilay,1:nbnd) = interpolate1D(tlay(icol,ilay), temp_ref_min, totplnk_delta_r, totplnk)
       end do
     end do
 
@@ -666,10 +666,10 @@ contains
     do ibnd = 1, nbnd
       gptS = band_lims_gpt(1, ibnd)
       gptE = band_lims_gpt(2, ibnd)
-      do ilay = 1, nlay
-        do icol = 1, ncol
-          do igpt = gptS, gptE
-            lay_src(icol,ilay,igpt) = pfrac(igpt,icol,ilay) * planck_function(icol,ilay,ibnd)
+      do igpt = gptS, gptE
+        do ilay = 1, nlay
+          do icol = 1, ncol
+            lay_src(icol,ilay,igpt) = pfrac(icol,ilay,igpt) * planck_function(icol,ilay,ibnd)
           end do
         end do
       end do
@@ -677,11 +677,11 @@ contains
 
     ! compute level source irradiances for each g-point
     do icol = 1, ncol
-      planck_function  (icol,     1,1:nbnd) = interpolate1D(tlev(icol,     1),temp_ref_min, totplnk_delta, totplnk)
+      planck_function  (icol,     1,1:nbnd) = interpolate1D(tlev(icol,     1),temp_ref_min, totplnk_delta_r, totplnk)
     end do
     do ilay = 1, nlay
       do icol = 1, ncol
-        planck_function(icol,ilay+1,1:nbnd) = interpolate1D(tlev(icol,ilay+1),temp_ref_min, totplnk_delta, totplnk)
+        planck_function(icol,ilay+1,1:nbnd) = interpolate1D(tlev(icol,ilay+1),temp_ref_min, totplnk_delta_r, totplnk)
       end do
     end do
 
@@ -693,17 +693,17 @@ contains
       gptE = band_lims_gpt(2, ibnd)
       do igpt = gptS, gptE
         do icol = 1, ncol
-          lev_src(icol,     1,igpt) = pfrac(igpt,icol,   1) * planck_function(icol,     1,ibnd)
+          lev_src(icol,     1,igpt) = pfrac(icol,   1,igpt) * planck_function(icol,     1,ibnd)
         end do
         do ilay = 2, nlay
           do icol = 1, ncol
-            lev_src(icol,ilay,igpt) = sqrt(pfrac(igpt,icol,ilay-1) *  &
-                                           pfrac(igpt,icol,ilay)) &
+            lev_src(icol,ilay,igpt) = sqrt(pfrac(icol,ilay-1, igpt) *  &
+                                           pfrac(icol,ilay,   igpt)) &
                                                             * planck_function(icol,ilay,  ibnd)
           end do
         end do
         do icol = 1, ncol
-          lev_src(icol,nlay+1,igpt) = pfrac(igpt,icol,nlay) * planck_function(icol,nlay+1,ibnd)
+          lev_src(icol,nlay+1,igpt) = pfrac(icol,nlay,igpt) * planck_function(icol,nlay+1,ibnd)
         end do
       end do
     end do
@@ -713,11 +713,11 @@ contains
   !
   ! One dimensional interpolation -- return all values along second table dimension
   !
-  pure function interpolate1D(val, offset, delta, table) result(res)
+  pure function interpolate1D(val, offset, delta_r, table) result(res)
     ! input
     real(wp), intent(in) :: val,    & ! axis value at which to evaluate table
                             offset, & ! minimum of table axis
-                            delta     ! step size of table axis
+                            delta_r   ! inverse of step size of table axis
     real(wp), dimension(:,:), &
               intent(in) :: table ! dimensions (axis, values)
     ! output
@@ -728,8 +728,8 @@ contains
     integer :: index ! index term
     real(wp) :: frac ! fractional term
     ! -------------------------------------
-    val0 = (val - offset) / delta
-    frac = val0 - int(val0) ! get fractional part
+    val0 = (val - offset) * delta_r
+    frac = val0 - aint(val0) ! get fractional part
     index = min(size(table,dim=1)-1, max(1, int(val0)+1)) ! limit the index range
     res(:) = table(index,:) + frac * (table(index+1,:) - table(index,:))
   end function interpolate1D
@@ -771,7 +771,7 @@ contains
     integer, dimension(2),       intent(in) :: jeta ! interpolation index for binary species parameter (eta)
     integer,                     intent(in) :: jtemp ! interpolation index for temperature
     integer,                     intent(in) :: jpress ! interpolation index for pressure
-    real(wp), dimension(ngpt), intent(out)          :: res ! the result
+    real(wp), dimension(:), intent(inout)          :: res ! the result
 
     ! Local variable
     integer :: igpt, jeta1, jeta2
